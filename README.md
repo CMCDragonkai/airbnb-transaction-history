@@ -24,6 +24,28 @@ These options are required:
 
 The rest are optional.
 
+The output is 5 files, for example:
+
+```
+airbnb_2014-2015.csv
+payouts_2014-2015.csv
+time_2014-2015.csv
+duration_2014-2015.txt
+income_2014-2015.txt
+```
+
+On the command line it looks like:
+
+```
+Start - End: 2014 - 2015
+Results will be saved to: /somewhere/someplace
+Downloading transaction history...
+Finished downloading. Beginning data munging.
+Finished munging. Exporting data to specified directory.
+Income earned: 100000
+Nights stayed: 9000
+```
+
 ## dependencies
 
 * httpie - https://github.com/jkbrzt/httpie
