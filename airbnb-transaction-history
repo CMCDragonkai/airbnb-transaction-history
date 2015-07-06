@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+
+set -o errexit
+set -o pipefail
+
+# process the command line parameters
+while [[ $# > 0 ]]; do
+  key="$1"
+  case $key in
+      -s|--start)
+      start="$2" 
+      shift
+      ;;
+      -e|--end)
+      end="$2"
+      shift
+      ;;
+      -u|--username)
+      username="$2"
+      shift
+      ;;
+      -p|--password)
+      password="$2"
+      shift
+      ;;
+      -i|--id)
+      user_id="$2"
+      shift
+      ;;
+      -d|--directory)
+      directory="$2"
+      ;;
+      -o|--origin)
+      origin="$2"
+      ;;
+  esac
+  shift # past argument or value
+done
+
+# default start and end is last year and this year
+start="${start:-$(date --date="last year" +"%Y")}"
+end="${end:-$(date +"%Y")}"
+echo "Start - End: $start - $end"
+
+# default directory will be the current working directory
+directory="${directory:-$(pwd)}"
+echo "Results will be saved to: $directory"
+
+# default origin (all domains must be the same for this to work)
+origin="${origin:-https://www.airbnb.com.au}"
+
+if [ -z $username ]; then
+  echo "Needs Username, pass it in as -u | --username <username>."
+  exit 1
+fi
+
+if [ -z $password ]; then
+  echo "Needs Password, pass it in as -p | --password <password>."
+  exit 1
+fi
+
+# setup a temporary session file for us to create
+scratch=$(mktemp -d -t airbnb.XXXXXXXXXX)
+session=$(mktemp -u -t airbnb_session.XXXXXXXXXX)
+
+# clean up all airbnb files including the session file on interrupt, termination or error
+clean_up () {
+    rm $session
+    rm -rf $scratch
+    exit $1
+}
+
+# gracefully terminate, while passing the correct exit code
+trap 'clean_up $?' INT TERM ERR
+
+http \
+--ignore-stdin \
+--follow \
+--check-status \
+--session=$session \
+--form POST \
+${origin}/authenticate \
+email=$username \
+from=email_login \
+password=$password \
+utf8=✓ \
+> /dev/null
+
+# if we didn't get passed a user id, we are going to try to detect it
+user_id=${user_id:-$(\
+http \
+--ignore-stdin \
+--follow \
+--check-status \
+--session=$session \
+${origin}/users/settings \
+| sed -n -e '/.*\?id=/s/.*\?id=\([[:digit:]]\+\)".*/\1/p' \
+| head -1\
+)}
+
+# if we couldn't find it, fail fast!
+if [ -z $user_id ]; then
+  echo "User ID was not passed in, tried to detect it, but couldn't find it."
+  exit 1
+fi
+
+# download!
+# loop for start, and end
+# this is a hack, in the future when CSV inference format can be fixed, we can just use ${origin}/transaction_history/csv/${user_id}?year=${start/end}
+
+echo "Downloading transaction history..."
+
+for month in {7..12}; do
+    http \
+    --ignore-stdin \
+    --follow \
+    --check-status \
+    --session=$session \
+    "${origin}/transaction_history/csv/${user_id}?year=${start}&month=${month}" \
+    --output ${scratch}/airbnb_${start}_${month}.csv;
+done
+
+for month in {1..6}; do
+    http \
+    --ignore-stdin \
+    --follow \
+    --check-status \
+    --session=$session \
+    "${origin}/transaction_history/csv/${user_id}?year=${end}&month=${month}" \
+    --output ${scratch}/airbnb_${start}_${month}.csv;
+done
+
+echo "Finished downloading. Beginning data munging."
+
+# stack it all up (problem here)
+ls --directory -1 ${scratch}/*.* | xargs csvstack > ${scratch}/airbnb_${start}-${end}.csv
+
+echo \
+"$(csvsql \
+--no-inference \
+--query \
+"SELECT Date, \`Paid Out\` FROM 'airbnb_${start}-${end}' WHERE Type = 'Payout';" \
+${scratch}/airbnb_${start}-${end}.csv)" \
+> ${scratch}/payouts_${start}-${end}.csv
+
+echo \
+"$(csvsql \
+--no-inference \
+--query \
+"SELECT Date, Nights FROM 'airbnb_${start}-${end}' WHERE Type = 'Reservation';" \
+${scratch}/airbnb_${start}-${end}.csv)" \
+> ${scratch}/time_${start}-${end}.csv
+
+# sum up the payment amount
+csvsql \
+--query \
+"SELECT SUM(\`Paid Out\`) FROM 'payouts_${start}-${end}';" \
+${scratch}/payouts_${start}-${end}.csv | tail -1 \
+> ${scratch}/income_${start}-${end}.txt
+
+# sum up all the nights
+csvsql \
+--query \
+"SELECT SUM(Nights) FROM 'time_${start}-${end}';" \
+${scratch}/time_${start}-${end}.csv | tail -1 \
+> ${scratch}/duration_${start}-${end}.txt
+
+cp -f ${scratch}/airbnb_${start}-${end}.csv ${directory}
+cp -f ${scratch}/time_${start}-${end}.csv ${directory}
+cp -f ${scratch}/payouts_${start}-${end}.csv ${directory}
+cp -f ${scratch}/income_${start}-${end}.txt ${directory}
+cp -f ${scratch}/duration_${start}-${end}.txt ${directory}
+
+echo "Finished munging. Exporting data to specified directory."
+echo "Income earned:" $(cat ${directory}/income_${start}-${end}.txt)
+echo "Nights stayed:" $(cat ${directory}/duration_${start}-${end}.txt)
+
+# clean up all our files
+clean_up 0
