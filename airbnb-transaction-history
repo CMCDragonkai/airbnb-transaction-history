@@ -29,6 +29,7 @@ while [[ $# > 0 ]]; do
       ;;
       -d|--directory)
       directory="$2"
+      shift
       ;;
       -o|--origin)
       origin="$2"
