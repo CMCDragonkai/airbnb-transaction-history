@@ -105,66 +105,42 @@ if [ -z $user_id ]; then
   exit 1
 fi
 
-# download!
-# loop for start, and end
-# this is a hack, in the future when CSV inference format can be fixed, we can just use ${origin}/transaction_history/csv/${user_id}?year=${start/end}
-
 echo "Downloading transaction history..."
 
-for month in {7..12}; do
-    http \
-    --ignore-stdin \
-    --follow \
-    --check-status \
-    --session=$session \
-    "${origin}/transaction_history/csv/${user_id}?year=${start}&month=${month}" \
-    --output ${scratch}/airbnb_${start}_${month}.csv;
-done
+http \
+--ignore-stdin \
+--follow \
+--check-status \
+--session=$session \
+"${origin}/transaction_history/csv/${user_id}?year=${start}&start_month=7&end_month=12" \
+--output ${scratch}/airbnb_${start}_7-12.csv;
 
-for month in {1..6}; do
-    http \
-    --ignore-stdin \
-    --follow \
-    --check-status \
-    --session=$session \
-    "${origin}/transaction_history/csv/${user_id}?year=${end}&month=${month}" \
-    --output ${scratch}/airbnb_${start}_${month}.csv;
-done
+http \
+--ignore-stdin \
+--follow \
+--check-status \
+--session=$session \
+"${origin}/transaction_history/csv/${user_id}?year=${end}&start_month=1&end_month=6" \
+--output ${scratch}/airbnb_${start}_1-6.csv;
 
 echo "Finished downloading. Beginning data munging."
 
 # stack it all up (problem here)
 ls --directory -1 ${scratch}/*.* | xargs csvstack > ${scratch}/airbnb_${start}-${end}.csv
 
-echo \
-"$(csvsql \
---no-inference \
---query \
-"SELECT Date, \`Paid Out\` FROM 'airbnb_${start}-${end}' WHERE Type = 'Payout';" \
-${scratch}/airbnb_${start}-${end}.csv)" \
-> ${scratch}/payouts_${start}-${end}.csv
+csvgrep --columns 'Type' --match 'Payout' "${scratch}/airbnb_${start}-${end}.csv" \
+| csvcut --columns 'Date,Paid Out' \
+> "${scratch}/payouts_${start}-${end}.csv"
 
-echo \
-"$(csvsql \
---no-inference \
---query \
-"SELECT Date, Nights FROM 'airbnb_${start}-${end}' WHERE Type = 'Reservation';" \
-${scratch}/airbnb_${start}-${end}.csv)" \
-> ${scratch}/time_${start}-${end}.csv
+csvgrep --columns 'Type' --match 'Reservation' "${scratch}/airbnb_${start}-${end}.csv" \
+| csvcut --columns 'Date,Nights' \
+> "${scratch}/time_${start}-${end}.csv"
 
-# sum up the payment amount
-csvsql \
---query \
-"SELECT SUM(\`Paid Out\`) FROM 'payouts_${start}-${end}';" \
-${scratch}/payouts_${start}-${end}.csv | tail -1 \
-> ${scratch}/income_${start}-${end}.txt
+csvstat --columns 'Paid Out' --sum "${scratch}/payouts_${start}-${end}.csv" \
+> "${scratch}/income_${start}-${end}.txt"
 
-# sum up all the nights
-csvsql \
---query \
-"SELECT SUM(Nights) FROM 'time_${start}-${end}';" \
-${scratch}/time_${start}-${end}.csv | tail -1 \
-> ${scratch}/duration_${start}-${end}.txt
+csvstat --columns 'Nights' --sum "${scratch}/time_${start}-${end}.csv" \
+> "${scratch}/duration_${start}-${end}.txt"
 
 cp -f ${scratch}/airbnb_${start}-${end}.csv ${directory}
 cp -f ${scratch}/time_${start}-${end}.csv ${directory}
