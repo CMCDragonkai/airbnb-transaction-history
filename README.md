@@ -22,7 +22,7 @@ These options are required:
 --password
 ```
 
-The rest are optional.
+The rest are optional, the start and end dates will be automatically calculated to the nearest financial year based on your computer's date.
 
 The output is 5 files, for example:
 
