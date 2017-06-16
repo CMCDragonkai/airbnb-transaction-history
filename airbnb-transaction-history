@@ -126,20 +126,20 @@ http \
 echo "Finished downloading. Beginning data munging."
 
 # stack it all up (problem here)
-ls --directory -1 ${scratch}/*.* | xargs csvstack > ${scratch}/airbnb_${start}-${end}.csv
+ls --directory -1 ${scratch}/*.* | xargs csvstack --encoding utf-8-sig > ${scratch}/airbnb_${start}-${end}.csv
 
-csvgrep --columns 'Type' --match 'Payout' "${scratch}/airbnb_${start}-${end}.csv" \
-| csvcut --columns 'Date,Paid Out' \
+csvgrep --encoding utf-8-sig --columns 'Type' --match 'Payout' "${scratch}/airbnb_${start}-${end}.csv" \
+| csvcut --encoding utf-8-sig --columns 'Date,Paid Out' \
 > "${scratch}/payouts_${start}-${end}.csv"
 
-csvgrep --columns 'Type' --match 'Reservation' "${scratch}/airbnb_${start}-${end}.csv" \
-| csvcut --columns 'Date,Nights' \
+csvgrep --encoding utf-8-sig --columns 'Type' --match 'Reservation' "${scratch}/airbnb_${start}-${end}.csv" \
+| csvcut --encoding utf-8-sig --columns 'Date,Nights' \
 > "${scratch}/time_${start}-${end}.csv"
 
-csvstat --columns 'Paid Out' --sum "${scratch}/payouts_${start}-${end}.csv" \
+csvstat --encoding utf-8-sig --columns 'Paid Out' --sum "${scratch}/payouts_${start}-${end}.csv" \
 > "${scratch}/income_${start}-${end}.txt"
 
-csvstat --columns 'Nights' --sum "${scratch}/time_${start}-${end}.csv" \
+csvstat --encoding utf-8-sig --columns 'Nights' --sum "${scratch}/time_${start}-${end}.csv" \
 > "${scratch}/duration_${start}-${end}.txt"
 
 cp -f ${scratch}/airbnb_${start}-${end}.csv ${directory}
